@@ -5,33 +5,12 @@ output:
   html_notebook: default
 ---
 
-# Motivation
-My PhD Project is mostly about Upscaling the effect of agricultural activities on the water quality of Lake Erie. The main goal is assessing the effectiveness of agricultural land management practices to reduce nutrient losses to the Great Lakes by analyzing and comparing:
-- Ontario data of farmer behaviours/activities
-- Watershed modeling
-
-Start working with the available dataset to get familiar with the available data  and its format.
-
-# Objectives
-Based on literature review, the method that farmers use to apply fertilizer and the timing of the application matter in how much micronutrients will spread in surface water and the objective is to know these factors better and quantify their effect as much as possible.
-
-for some of the application method the fertilizer would tilled down in the soil so the odds of washing away by the surface water is lower. On the other hand the application used for applying manure or fertilization depends on various factors such as land area, crop type, equipment the farmer has access to and etc.
-
-questions:
-1- Can we use the crop type and the area of the field to predict whether a field has been fertilized or not?
-In this case the outcome is binary so we can use binary logistic regression.
-2- What is the probability of using each application method for three dominant crop type in the basin over the range of field area?
-In this case the outcome is non-binary and we can use multinomial logistic regressions to calculate the odds of each outcome category.
 
 # dominant crop types
 - Corn
 - Wheat
 - Soybeans
 
-```{r}
-CropType.table <- table(fertilizer$Crop)
-sort(CropType.table, decreasing = TRUE)
-```
 
 
 # Different methods of fertilization
@@ -50,15 +29,17 @@ required packages are all listed here
 knitr::opts_knit$set(root.dir = "C:/Ryerson/R")
 knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
 library(readxl)
-require(foreign)
+#require(foreign)
 require(nnet)
 require(ggplot2)
 require(ggplot)
 require(reshape2)
-require(dplyr)
-require(caTools)
+#require(dplyr)
+#require(caTools)
 require(lessR)
-require(stringr)
+#require(stringr)
+require(forcats)
+require(caret)
 
 ```
 
@@ -72,13 +53,16 @@ manure[c(1,2)] <- lapply(manure[c(1,2)], as.numeric)
 manure[c(1,4,6,7,13)] <- lapply(manure[c(1,4,6,7,13)],as.factor)
 manureApplication.table <- table(manure$Application)
 manureApplication.table
+
+manure <- manure[manure$Crop == "corn" | manure$Crop =="wheat" | manure$Crop == "soybeans", ]
+manure <- droplevels(manure[!manure$Crop == "corn" | !manure$Crop =="wheat" | !manure$Crop == "soybeans",])
+
+str(manure)
+manure.croptable <- table(fct_infreq(manure$Crop))
+manure.croptable
 ```
 
 
-
-```{r}
-table(manure$Crop, manure$Application)
-```
 
 ## Detail_Fertilizer
 
@@ -86,8 +70,9 @@ table(manure$Crop, manure$Application)
 fertilizer <- read_excel('AGRIModelDATA_MASTER_ORIGINAL_2June2021.xlsx', sheet = "Detail_Fertilizer")
 names(fertilizer)[11] <- "Fert_Date_End"
 fertilizer[c(1,2)] <- lapply(fertilizer[c(1,2)], as.numeric)
+fertilizer <- fertilizer[!is.na(fertilizer$Crop),]
 fertilizer[c(1,4,6,9,16,17)] <- lapply(fertilizer[c(1,4,6,9,16,17)],as.factor)
-fertilizerApplication.table <- table(fertilizer$Application)
+
 ```
 
 
@@ -100,19 +85,20 @@ FertilizedData$HasFertilizer <- as.factor(FertilizedData$HasFertilizer)
 
 ```
 
+
+
+
+
 ## Lostic regression
 
-predict whether the field is fertilised or not based on crop type and area of the field.
-How to interpret results.
-1 - Odd ratio = the odds of fertilization are reduced by 2.58 if there is one unit of increase in the predictor factor
-1 - 1.0258 = -2.58%
-the odds of fertilization increases by 2.58% if there is one unit of increase in HA
-1 / 1.0258 = 0.974 the odds of not fertilization will increase by 0.974 by increasing one unit in HA
+
 
 
 
 ```{r}
 Model1 <- Logit(HasFertilizer~ Crop, data= FertilizedData)
+reg(HA~ Crop, data= FertilizedData)
+
 ```
 
 ```{r}
@@ -123,7 +109,8 @@ Model2 <- Logit(HasFertilizer~ HA, data= FertilizedData , prob_cut=0.8)
 HasFertilizer vs. HA + Crop
 ```{r}
 #multiple Logistic Regression model
-Logit(HasFertilizer~ HA + Crop, data= FertilizedData)
+model3 <- Logit(HasFertilizer~ HA + Crop, data= FertilizedData)
+caret::varImp(model3)
 ```
 
 
@@ -183,9 +170,21 @@ ggplot(lppManure, aes(x = HA, y = probability, colour = Crop)) + geom_line() + f
 Fertilizer application method vs. crop type and area
 
 ```{r}
+
+fertilizerApplication.table <- table(fertilizer$Application)
+fertilizer <- fertilizer[fertilizer$Crop == "corn" | fertilizer$Crop =="wheat" | fertilizer$Crop == "soybeans", ]
+fertilizer <- droplevels(fertilizer[!fertilizer$Crop == "corn" | !fertilizer$Crop =="wheat" | !fertilizer$Crop == "soybeans",])
+fertilizer$Application <- as.factor(fertilizer$Application)
+str(fertilizer)
+fertilizer.croptable <- table(fct_infreq(fertilizer$Crop))
+fertilizer.croptable
+
+
 with(fertilizer, table(Crop, Application))
 with(fertilizer, do.call(rbind, tapply(HA, Application, function(x) c(M = mean(x), SD = sd(x)))))
-fertilizer$Application <- as.factor(fertilizer$Application)
+
+
+
 fertilizer$Application2 <- relevel(fertilizer$Application, ref = "applied on living crop")
 testFertilizer <- multinom(Application2 ~ Crop + HA, data = fertilizer)
 
@@ -224,7 +223,5 @@ head(lppFertilizer)  # view first few rows
 ggplot(lppFertilizer, aes(x = HA, y = probability, colour = Crop)) + geom_line() + facet_grid(variable ~   ., scales = "free")
 ```
 
-The probability of applying fertilizer on living crops is higher that other crop types for wheat.
-The probability of injecting fertilizer reduses for all three crop types for larger fields.
 
 
